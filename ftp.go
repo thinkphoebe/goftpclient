@@ -33,6 +33,7 @@ type ServerConn struct {
 	options *dialOptions
 	conn    *textproto.Conn
 	host    string
+	context context.Context
 
 	// Server capabilities discovered at runtime
 	features      map[string]string
@@ -84,6 +85,10 @@ func Dial(addr string, options ...DialOption) (*ServerConn, error) {
 		do.location = time.UTC
 	}
 
+	if do.context == nil {
+		do.context = context.Background()
+	}
+
 	tconn := do.conn
 	if tconn == nil {
 		var err error
@@ -93,13 +98,7 @@ func Dial(addr string, options ...DialOption) (*ServerConn, error) {
 		} else if do.tlsConfig != nil {
 			tconn, err = tls.DialWithDialer(&do.dialer, "tcp", addr, do.tlsConfig)
 		} else {
-			ctx := do.context
-
-			if ctx == nil {
-				ctx = context.Background()
-			}
-
-			tconn, err = do.dialer.DialContext(ctx, "tcp", addr)
+			tconn, err = do.dialer.DialContext(do.context, "tcp", addr)
 		}
 
 		if err != nil {
@@ -121,6 +120,7 @@ func Dial(addr string, options ...DialOption) (*ServerConn, error) {
 		features: make(map[string]string),
 		conn:     textproto.NewConn(sourceConn),
 		host:     remoteAddr.IP.String(),
+		context:  do.context,
 	}
 
 	_, _, err := c.conn.ReadResponse(StatusReady)
@@ -425,14 +425,14 @@ func (c *ServerConn) openDataConn() (net.Conn, error) {
 	}
 
 	if c.options.tlsConfig != nil {
-		conn, err := c.options.dialer.Dial("tcp", addr)
+		conn, err := c.options.dialer.DialContext(c.context, "tcp", addr)
 		if err != nil {
 			return nil, err
 		}
 		return tls.Client(conn, c.options.tlsConfig), err
 	}
 
-	return c.options.dialer.Dial("tcp", addr)
+	return c.options.dialer.DialContext(c.context, "tcp", addr)
 }
 
 // cmd is a helper function to execute a command and check for the expected FTP
